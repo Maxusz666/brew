@@ -13,8 +13,6 @@ module Homebrew
     Homebrew::CLI::Parser.new do
       description <<~EOS
         Check for typechecking errors using Sorbet.
-
-        Not (yet) working on Apple Silicon.
       EOS
       switch "--fix",
              description: "Automatically fix type errors."
@@ -44,11 +42,6 @@ module Homebrew
 
   sig { void }
   def typecheck
-    # TODO: update description above if removing this.
-    if Hardware::CPU.arm? || Hardware::CPU.in_rosetta2?
-      raise UsageError, "not (yet) working on Apple Silicon or Rosetta 2!"
-    end
-
     args = typecheck_args.parse
 
     Homebrew.install_bundler_gems!(groups: ["sorbet"])
@@ -60,14 +53,16 @@ module Homebrew
         ]
 
         ohai "Updating Tapioca RBI files..."
-        system "bundle", "exec", "tapioca", "sync", "--exclude", *excluded_gems
+        system "bundle", "exec", "tapioca", "gem", "--exclude", *excluded_gems
+        system "bundle", "exec", "parlour"
         system "bundle", "exec", "srb", "rbi", "hidden-definitions"
         system "bundle", "exec", "srb", "rbi", "todo"
 
         if args.suggest_typed?
           result = system_command(
             "bundle",
-            args:         ["exec", "--", "srb", "tc", "--suggest-typed", "--typed=strict", "--error-white-list=7022"],
+            args:         ["exec", "--", "srb", "tc", "--suggest-typed", "--typed=strict",
+                           "--isolate-error-code=7022"],
             print_stderr: false,
           )
 
@@ -101,9 +96,6 @@ module Homebrew
       end
 
       srb_exec = %w[bundle exec srb tc]
-
-      # TODO: comment explaining why?
-      srb_exec << "--suppress-error-code" << "5061"
 
       srb_exec << "--quiet" if args.quiet?
 

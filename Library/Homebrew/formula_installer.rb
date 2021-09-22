@@ -150,13 +150,16 @@ class FormulaInstaller
       return false
     end
 
-    bottle = formula.bottle_specification
+    bottle = formula.bottle_for_tag(Utils::Bottles.tag.to_sym)
+    return false if bottle.nil?
+
     unless bottle.compatible_locations?
       if output_warning
+        prefix = Pathname(bottle.cellar).parent
         opoo <<~EOS
           Building #{formula.full_name} from source as the bottle needs:
           - HOMEBREW_CELLAR: #{bottle.cellar} (yours is #{HOMEBREW_CELLAR})
-          - HOMEBREW_PREFIX: #{bottle.prefix} (yours is #{HOMEBREW_PREFIX})
+          - HOMEBREW_PREFIX: #{prefix} (yours is #{HOMEBREW_PREFIX})
         EOS
       end
       return false
@@ -218,8 +221,12 @@ class FormulaInstaller
     raise
   end
 
-  def check_install_sanity
+  def check_installation_already_attempted
     raise FormulaInstallationAlreadyAttemptedError, formula if self.class.attempted.include?(formula)
+  end
+
+  def check_install_sanity
+    check_installation_already_attempted
 
     if force_bottle? && !pour_bottle?
       raise CannotInstallFormulaError, "--force-bottle passed but #{formula.full_name} has no bottle!"
@@ -358,7 +365,7 @@ class FormulaInstaller
     raise UnbottledError, [formula] if !pour_bottle? && !formula.bottle_unneeded? && !DevelopmentTools.installed?
 
     unless ignore_deps?
-      deps = compute_dependencies
+      deps = compute_dependencies(use_cache: false)
       if ((pour_bottle? && !DevelopmentTools.installed?) || build_bottle?) &&
          (unbottled = unbottled_dependencies(deps)).presence
         # Check that each dependency in deps has a bottle available, terminating
@@ -441,7 +448,7 @@ class FormulaInstaller
 
     opoo "Nothing was installed to #{formula.prefix}" unless formula.latest_version_installed?
     end_time = Time.now
-    Homebrew.messages.formula_installed(formula, end_time - start_time)
+    Homebrew.messages.package_installed(formula.name, end_time - start_time)
   end
 
   def check_conflicts
@@ -475,7 +482,8 @@ class FormulaInstaller
 
   # Compute and collect the dependencies needed by the formula currently
   # being installed.
-  def compute_dependencies
+  def compute_dependencies(use_cache: true)
+    @compute_dependencies = nil unless use_cache
     @compute_dependencies ||= begin
       check_requirements(expand_requirements)
       expand_dependencies
@@ -501,7 +509,7 @@ class FormulaInstaller
 
     req_map.each_pair do |dependent, reqs|
       reqs.each do |req|
-        next if dependent.latest_version_installed? && req.name == "maximummacos"
+        next if dependent.latest_version_installed? && req.name == "macos" && req.comparator == "<="
 
         @requirement_messages << "#{dependent}: #{req.message}"
         fatals << req if req.fatal?
@@ -754,10 +762,10 @@ class FormulaInstaller
 
     ohai "Finishing up" if verbose?
 
-    install_service
-
     keg = Keg.new(formula.prefix)
     link(keg)
+
+    install_service
 
     fix_dynamic_linkage(keg) if !@poured_bottle || !formula.bottle_specification.skip_relocation?
 
@@ -1194,6 +1202,12 @@ class FormulaInstaller
       problem_if_output(check_env_path(formula.sbin))
     end
     super
+  end
+
+  # This is a stub for calls made to this method at install time.
+  # Exceptions are correctly identified when doing `brew audit`.
+  def tap_audit_exception(*)
+    true
   end
 
   def self.locked

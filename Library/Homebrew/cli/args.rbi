@@ -103,7 +103,7 @@ module Homebrew
       def linux_self_hosted?; end
 
       sig { returns(T::Boolean) }
-      def wheezy?; end
+      def linux_wheezy?; end
 
       sig { returns(T::Boolean) }
       def total?; end
@@ -158,6 +158,9 @@ module Homebrew
 
       sig { returns(T::Boolean) }
       def minor?; end
+
+      sig { returns(T.nilable(String)) }
+      def bottle_tag; end
 
       sig { returns(T.nilable(String)) }
       def tag; end
@@ -287,6 +290,9 @@ module Homebrew
 
       sig { returns(T.nilable(T::Array[String])) }
       def groups; end
+
+      sig { returns(T::Boolean) }
+      def write_only?; end
     end
   end
 end
